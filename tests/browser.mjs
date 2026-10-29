@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test'
+﻿import { chromium } from '@playwright/test'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 
@@ -69,16 +69,14 @@ try {
         ctx.fillRect(80, 60, 90, 100)
         return c.toDataURL().split(',')[1]
       })
-      await page
-        .getByLabel('이미지 파일 선택')
-        .setInputFiles({
-          name: 'QA image.png',
-          mimeType: 'image/png',
-          buffer: Buffer.from(png, 'base64'),
-        })
+      await page.getByLabel('이미지 파일 선택').setInputFiles({
+        name: 'QA image.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from(png, 'base64'),
+      })
       await page.waitForFunction(
         () =>
-          document.querySelector('input[aria-label="작품 이름"]').value ===
+          document.querySelector('input[aria-label="작품 이름"]')?.value ===
           'QA image',
       )
       const before = await canvasData()
@@ -146,7 +144,7 @@ try {
       .click()
     await page.waitForFunction(
       () =>
-        document.querySelector('input[aria-label="작품 이름"]').value ===
+        document.querySelector('input[aria-label="작품 이름"]')?.value ===
         'QA saved artwork',
     )
     assert.equal(
@@ -258,6 +256,8 @@ try {
         await page.waitForFunction(
           () => !document.querySelector('.sidebar.mobile-open'),
         )
+        await page.waitForTimeout(250)
+        await page.evaluate(() => window.scrollTo(0, 0))
         await page.screenshot({ path: '.qa/home-mobile.png', fullPage: true })
       }
     }

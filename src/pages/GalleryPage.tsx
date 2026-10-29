@@ -21,7 +21,7 @@ function GalleryCard({
   return (
     <article className="gallery-card">
       <Link to={`/image?id=${art.id}`} className="gallery-image">
-        <img src={url} alt={`${art.name} ASCII 작품`} />
+        <img src={url || undefined} alt={`${art.name} ASCII 작품`} />
         <span>
           스튜디오에서 열기 <ArrowUpRight size={16} />
         </span>
