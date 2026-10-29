@@ -1,0 +1,5 @@
+dist
+node_modules
+.qa
+package-lock.json
+*.tsbuildinfo
