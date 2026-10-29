@@ -8,6 +8,7 @@ type Props = {
   video?: boolean
   onPickColor?: () => void
   onSelectRegion?: () => void
+  onAutoSelect?: () => void
   disabled?: boolean
 }
 export default function Controls({
@@ -16,6 +17,7 @@ export default function Controls({
   video,
   onPickColor,
   onSelectRegion,
+  onAutoSelect,
   disabled,
 }: Props) {
   const set = <K extends keyof AsciiSettings>(
@@ -62,6 +64,7 @@ export default function Controls({
         video={video}
         onPick={onPickColor}
         onSelect={onSelectRegion}
+        onAuto={onAutoSelect}
         disabled={disabled}
       />
       <div className="control-section">

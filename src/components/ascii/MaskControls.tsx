@@ -7,6 +7,7 @@ type Props = {
   video?: boolean
   onPick?: () => void
   onSelect?: () => void
+  onAuto?: () => void
   disabled?: boolean
 }
 export default function MaskControls({
@@ -15,6 +16,7 @@ export default function MaskControls({
   video,
   onPick,
   onSelect,
+  onAuto,
   disabled,
 }: Props) {
   return (
@@ -27,13 +29,15 @@ export default function MaskControls({
           value={mask.mode}
           onChange={(e) => {
             const mode = e.target.value as MaskSettings['mode']
-            if (mode === 'lasso' && !mask.region) onSelect?.()
+            if (mode === 'auto') onAuto?.()
+            else if (mode === 'lasso' && !mask.region) onSelect?.()
             else onChange({ ...mask, mode })
           }}
         >
           <option value="none">전체 {video ? '영상 프레임' : '이미지'}</option>
           <option value="color">배경색 제거</option>
           {!video && <option value="lasso">직접 영역 선택</option>}
+          {!video && <option value="auto">자동 피사체 선택</option>}
         </select>
       </label>
       {mask.mode === 'color' && (
@@ -84,6 +88,14 @@ export default function MaskControls({
           onClick={onSelect}
         >
           <Lasso size={15} /> 영역 다시 선택
+        </button>
+      )}
+      {mask.mode === 'auto' && (
+        <button
+          className="button secondary small region-reselect"
+          onClick={onAuto}
+        >
+          선택 영역 보정
         </button>
       )}
       {mask.mode !== 'none' && (

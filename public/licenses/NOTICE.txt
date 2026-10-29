@@ -1,0 +1,21 @@
+AsciiLab v0.3 automatic subject selection
+
+Model: Open Remove Background Model (ormbg), by schirrmacher, based on IS-Net / DIS.
+Model source: https://huggingface.co/schirrmacher/ormbg
+ONNX conversion: https://huggingface.co/onnx-community/ormbg-ONNX
+Weights revision: c491647 (Upload ONNX weights)
+File: onnx/model_quantized.onnx (44,315,205 bytes)
+SHA-256: ffbcae62a7b675d616e64cb392ee028786c4cf74f83596590fba13733ef00171
+License: Apache License 2.0, as declared by both model cards.
+Model weights are unchanged and fetched on demand from Hugging Face.
+See Apache-2.0.txt for the complete license.
+
+IS-Net research: Xuebin Qin, Hang Dai, Xiaobin Hu, Deng-Ping Fan,
+Ling Shao, Luc Van Gool. Highly Accurate Dichotomous Image Segmentation, ECCV 2022.
+https://github.com/xuebinqin/DIS
+
+Inference: ONNX Runtime Web 1.24.3, Microsoft Corporation, MIT.
+See ONNX-Runtime-MIT.txt and ONNX-Runtime-ThirdPartyNotices.txt.
+Runtime binaries are bundled without modifications.
+
+NeoDunggeunmo font: SIL Open Font License 1.1; see Font-OFL.txt.

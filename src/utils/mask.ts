@@ -1,8 +1,15 @@
 export type Point = { x: number; y: number }
 const MAX_COLOR_DISTANCE = Math.sqrt(3 * 255 ** 2)
 export type Region = { width: number; height: number; points: Point[] }
+export type AlphaMask = {
+  width: number
+  height: number
+  data: Uint8ClampedArray
+}
 export type MaskSettings = {
-  mode: 'none' | 'color' | 'lasso'
+  mode: 'none' | 'color' | 'lasso' | 'auto'
+  automatic?: AlphaMask | null
+  baseline?: AlphaMask | null
   keyColor: string
   tolerance: number
   feather: number
@@ -105,7 +112,16 @@ export function maskImage(
     const pixels = ctx.getImageData(0, 0, width, height)
     applyColorMask(pixels.data, mask)
     ctx.putImageData(pixels, 0, 0)
-  } else if (mask.region) {
+  } else if (mask.mode === 'auto' && mask.automatic) {
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.drawImage(
+      alphaCanvas(mask.automatic, mask.feather),
+      0,
+      0,
+      width,
+      height,
+    )
+  } else if (mask.mode === 'lasso' && mask.region) {
     ctx.globalCompositeOperation = 'destination-in'
     ctx.drawImage(
       createRegionMask(width, height, mask.region, mask.feather),
@@ -114,4 +130,60 @@ export function maskImage(
     )
   }
   return canvas
+}
+
+export function alphaCanvas(mask: AlphaMask, feather = 0): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = mask.width
+  canvas.height = mask.height
+  const ctx = canvas.getContext('2d')!
+  const pixels = ctx.createImageData(mask.width, mask.height)
+  for (let i = 0; i < mask.data.length; i++) {
+    pixels.data[i * 4] = pixels.data[i * 4 + 1] = pixels.data[i * 4 + 2] = 255
+    pixels.data[i * 4 + 3] = mask.data[i]
+  }
+  ctx.putImageData(pixels, 0, 0)
+  if (!feather) return canvas
+  const soft = document.createElement('canvas')
+  soft.width = mask.width
+  soft.height = mask.height
+  const output = soft.getContext('2d')!
+  output.filter = `blur(${(feather / 100) * Math.min(mask.width, mask.height)}px)`
+  output.drawImage(canvas, 0, 0)
+  return soft
+}
+
+/** Coordinates and radius are in original-image pixels. Interpolation avoids stroke gaps. */
+export function paintMask(
+  mask: AlphaMask,
+  from: Point,
+  to: Point,
+  radius: number,
+  add: boolean,
+  softness: number,
+) {
+  const distance = Math.hypot(to.x - from.x, to.y - from.y)
+  const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius / 3)))
+  for (let step = 0; step <= steps; step++) {
+    const x = from.x + ((to.x - from.x) * step) / steps
+    const y = from.y + ((to.y - from.y) * step) / steps
+    for (
+      let py = Math.max(0, Math.floor(y - radius));
+      py < Math.min(mask.height, Math.ceil(y + radius));
+      py++
+    )
+      for (
+        let px = Math.max(0, Math.floor(x - radius));
+        px < Math.min(mask.width, Math.ceil(x + radius));
+        px++
+      ) {
+        const d = Math.hypot(px + 0.5 - x, py + 0.5 - y) / radius
+        if (d >= 1) continue
+        const coverage = softness ? Math.min(1, (1 - d) / softness) : 1
+        const i = py * mask.width + px
+        mask.data[i] = Math.round(
+          mask.data[i] + ((add ? 255 : 0) - mask.data[i]) * coverage,
+        )
+      }
+  }
 }

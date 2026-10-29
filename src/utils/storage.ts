@@ -1,4 +1,6 @@
 import type { AsciiSettings } from './ascii'
+import { alphaCanvas } from './mask'
+import type { AlphaMask } from './mask'
 export type Artwork = {
   id: string
   name: string
@@ -42,10 +44,53 @@ async function query<T>(
 }
 export const listArtworks = () =>
   query('readonly', (s) => s.getAll()) as Promise<Artwork[]>
-export const getArtwork = (id: string) =>
-  query('readonly', (s) => s.get(id)) as Promise<Artwork | undefined>
-export const saveArtwork = (artwork: Artwork) =>
-  query('readwrite', (s) => s.put(artwork))
+type StoredArtwork = Artwork & { automaticPng?: Blob; baselinePng?: Blob }
+async function decodeMask(blob: Blob): Promise<AlphaMask> {
+  const bitmap = await createImageBitmap(blob)
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(bitmap, 0, 0)
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+    const data = new Uint8ClampedArray(canvas.width * canvas.height)
+    for (let i = 0; i < data.length; i++) data[i] = pixels[i * 4 + 3]
+    return { width: canvas.width, height: canvas.height, data }
+  } finally {
+    bitmap.close()
+  }
+}
+export async function getArtwork(id: string): Promise<Artwork | undefined> {
+  const art = await query<StoredArtwork | undefined>('readonly', (s) =>
+    s.get(id),
+  )
+  if (!art) return
+  if (art.automaticPng) {
+    art.settings.mask.automatic = await decodeMask(art.automaticPng)
+    art.settings.mask.baseline = art.baselinePng
+      ? await decodeMask(art.baselinePng)
+      : art.settings.mask.automatic
+  }
+  return art
+}
+export async function saveArtwork(artwork: Artwork) {
+  const mask = artwork.settings.mask
+  const stored: StoredArtwork = { ...artwork }
+  // PNG compresses the alpha plane losslessly; gallery listings never decode masks.
+  if (mask?.automatic) {
+    stored.automaticPng = await canvasBlob(alphaCanvas(mask.automatic))
+    stored.baselinePng =
+      mask.baseline && mask.baseline !== mask.automatic
+        ? await canvasBlob(alphaCanvas(mask.baseline))
+        : stored.automaticPng
+    stored.settings = {
+      ...artwork.settings,
+      mask: { ...mask, automatic: undefined, baseline: undefined },
+    }
+  }
+  return query('readwrite', (s) => s.put(stored))
+}
 export const deleteArtwork = (id: string) =>
   query('readwrite', (s) => s.delete(id))
 export function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {

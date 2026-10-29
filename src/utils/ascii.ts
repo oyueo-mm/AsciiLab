@@ -3,6 +3,8 @@ import type { MaskSettings } from './mask'
 
 export const CHARSETS = {
   Classic: '@#%*+=-:. ',
+  '한글 자모': 'ㅎㅂㅁㅍㅊㅅㅇㄷㄴㄱㅣㅡ ',
+  '한글 음절': '숲봄별빛꿈꽃밤물달가나다하 ',
   Dense:
     '$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,"^`. ',
   Minimal: '█▓▒░· ',
@@ -60,11 +62,14 @@ export function characterFor(value: number, settings: AsciiSettings): string {
   return createCharacterMapper(settings)(value)
 }
 function createCharacterMapper(settings: AsciiSettings) {
-  const chars = Array.from(
+  let chars = splitCharacters(
     settings.charset === 'Custom'
       ? settings.custom || ' '
       : CHARSETS[settings.charset],
   )
+  if (!chars.length) chars = [' ']
+  if (settings.charset === '한글 자모' || settings.charset === '한글 음절')
+    chars = densityOrder(chars, settings)
   return (value: number) => {
     let light =
       Math.max(
@@ -135,7 +140,10 @@ export function convertSource(
     1,
     Math.min(
       400,
-      Math.round((((columns * height) / width) * 0.6) / settings.lineHeight),
+      Math.round(
+        (((columns * height) / width) * cellRatio(settings)) /
+          effectiveLineHeight(settings),
+      ),
     ),
   )
   const sample = sampler || document.createElement('canvas')
@@ -163,8 +171,8 @@ export function drawFrame(
   frame: AsciiFrame,
   settings: AsciiSettings,
 ) {
-  const cell = settings.fontSize * 0.6,
-    line = settings.fontSize * settings.lineHeight
+  const cell = settings.fontSize * cellRatio(settings),
+    line = settings.fontSize * effectiveLineHeight(settings)
   const width = Math.ceil(frame.columns * cell),
     height = Math.ceil(frame.rows * line)
   if (canvas.width !== width) canvas.width = width
@@ -176,7 +184,7 @@ export function drawFrame(
     ctx.fillStyle = settings.background
     ctx.fillRect(0, 0, width, height)
   }
-  ctx.font = `${settings.fontSize}px "Courier New", monospace`
+  ctx.font = `${settings.fontSize}px ${asciiFont(settings)}`
   ctx.textBaseline = 'top'
   for (let y = 0; y < frame.rows; y++)
     for (let x = 0; x < frame.columns; x++) {
@@ -184,7 +192,7 @@ export function drawFrame(
       if (!frame.opacities[i] || frame.characters[i] === ' ') continue
       ctx.globalAlpha = frame.opacities[i]
       ctx.fillStyle = frame.colors[i]
-      ctx.fillText(frame.characters[i], x * cell, y * line)
+      ctx.fillText(frame.characters[i], x * cell, y * line, cell)
     }
   ctx.globalAlpha = 1
 }
@@ -210,20 +218,78 @@ export function escapeHtml(text: string) {
       ]!,
   )
 }
+export function frameHtml(frame: AsciiFrame, settings: AsciiSettings) {
+  const cell = settings.fontSize * cellRatio(settings)
+  const content = frame.characters
+    .map(
+      (c, i) =>
+        `<span style="display:inline-block;width:${cell}px;color:${frame.colors[i]};opacity:${frame.opacities[i].toFixed(3)}">${escapeHtml(c)}</span>${(i + 1) % frame.columns === 0 && i + 1 < frame.characters.length ? '\n' : ''}`,
+    )
+    .join('')
+  const background = /^#[0-9a-f]{6}$/i.test(settings.background)
+    ? settings.background
+    : '#050505'
+  return `<pre style="margin:0;white-space:pre;letter-spacing:0;font:${settings.fontSize}px/${effectiveLineHeight(settings)} ${asciiFont(settings)};background:${settings.transparentBackground ? 'transparent' : background}">${content}</pre>`
+}
 export function exportHtml(
   frame: AsciiFrame,
   settings: AsciiSettings,
   name: string,
 ) {
-  const content = frame.characters
-    .map(
-      (c, i) =>
-        `<span style="color:${frame.colors[i]};opacity:${frame.opacities[i].toFixed(3)}">${escapeHtml(c)}</span>${(i + 1) % frame.columns === 0 ? '\n' : ''}`,
-    )
-    .join('')
-  const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><title>${escapeHtml(name)}</title><style>body{background:${settings.transparentBackground ? 'transparent' : settings.background};margin:24px}pre{font:${settings.fontSize}px/${settings.lineHeight} 'Courier New',monospace;letter-spacing:0}</style><pre>${content}</pre></html>`
+  const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><title>${escapeHtml(name)}</title><body>${frameHtml(frame, settings)}</body></html>`
   downloadBlob(
     new Blob([html], { type: 'text/html;charset=utf-8' }),
     `${name}.html`,
   )
+}
+
+export function splitCharacters(text: string): string[] {
+  // Grapheme segmentation also preserves combining marks and joined emoji.
+  return Array.from(
+    new Intl.Segmenter('ko', { granularity: 'grapheme' }).segment(
+      text.replace(/[\r\n\t]/g, ''),
+    ),
+    (part) => part.segment,
+  )
+}
+export function cellRatio(settings: AsciiSettings): number {
+  if (settings.charset === '한글 자모' || settings.charset === '한글 음절')
+    return 1
+  return settings.charset === 'Custom' &&
+    /[^\u0000-\u00ff]/u.test(settings.custom)
+    ? 1
+    : 0.6
+}
+export function effectiveLineHeight(settings: AsciiSettings): number {
+  return Math.max(cellRatio(settings) === 1 ? 1 : 0.8, settings.lineHeight)
+}
+export function asciiFont(settings: AsciiSettings) {
+  return cellRatio(settings) === 1
+    ? 'NeoDunggeunmo, monospace'
+    : "'Courier New', monospace"
+}
+const densityCache = new Map<string, string[]>()
+function densityOrder(chars: string[], settings: AsciiSettings): string[] {
+  if (typeof document === 'undefined') return chars
+  const key = chars.join('') + document.fonts?.check('32px NeoDunggeunmo')
+  const cached = densityCache.get(key)
+  if (cached) return cached
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 40
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  ctx.font = `32px ${asciiFont(settings)}`
+  ctx.textBaseline = 'top'
+  const sorted = chars
+    .map((char) => {
+      ctx.clearRect(0, 0, 40, 40)
+      ctx.fillText(char, 0, 0)
+      const data = ctx.getImageData(0, 0, 40, 40).data
+      let density = 0
+      for (let i = 3; i < data.length; i += 4) density += data[i]
+      return { char, density }
+    })
+    .sort((a, b) => b.density - a.density)
+    .map((item) => item.char)
+  densityCache.set(key, sorted)
+  return sorted
 }

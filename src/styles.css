@@ -4,6 +4,88 @@
   font-display: swap;
   font-weight: 400;
 }
+.text-viewport {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: auto;
+  align-self: stretch;
+  background: #050505;
+}
+.text-viewport pre {
+  margin: 0;
+  padding: 12px;
+  width: max-content;
+  min-width: 100%;
+  white-space: pre;
+  user-select: text;
+  letter-spacing: 0;
+  font-variant-ligatures: none;
+}
+.video-text {
+  max-height: 320px;
+  margin-bottom: 16px;
+}
+.export-buttons {
+  flex-wrap: wrap;
+}
+.export-buttons select {
+  max-width: 140px;
+  background: #161616;
+  border: 1px solid #343434;
+  border-radius: 3px;
+  padding: 7px;
+  font-size: 11px;
+}
+.ai-progress {
+  position: fixed;
+  z-index: 100;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 94vw;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  background: #101713;
+  border: 1px solid var(--mint);
+  font-size: 12px;
+}
+.brush-toolbar {
+  flex-wrap: wrap;
+}
+.brush-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.brush-toolbar input {
+  width: 90px;
+}
+.brush-active {
+  border-color: var(--mint) !important;
+  color: var(--mint) !important;
+}
+.brush-viewport {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.brush-viewport canvas {
+  display: block;
+  object-fit: contain;
+  max-width: 100%;
+  max-height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
 :root {
   font-family: Arial, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
   color: #f5f5f5;

@@ -10,6 +10,7 @@ import {
   Save,
   Upload,
   X,
+  Type,
 } from 'lucide-react'
 import Controls from '../components/ascii/Controls'
 import { AsciiCanvas } from '../components/ascii/AsciiCanvas'
@@ -20,6 +21,9 @@ import {
   exportHtml,
   exportPng,
   normalizeSettings,
+  asciiFont,
+  effectiveLineHeight,
+  cellRatio,
 } from '../utils/ascii'
 import type { AsciiSettings } from '../utils/ascii'
 import { canvasBlob, getArtwork, saveArtwork } from '../utils/storage'
@@ -27,6 +31,11 @@ import { createSample } from '../utils/sample'
 import { DEFAULT_MASK, maskImage } from '../utils/mask'
 import { decodeRaster } from '../utils/image'
 import RegionEditor from '../components/ascii/RegionEditor'
+import MaskBrushEditor from '../components/ascii/MaskBrushEditor'
+import { segmentSubject } from '../utils/segmentation'
+import { copyFrame, isEditingText } from '../utils/clipboard'
+import type { CopyMode } from '../utils/clipboard'
+import type { AlphaMask } from '../utils/mask'
 
 type Source = {
   image: HTMLImageElement | HTMLCanvasElement
@@ -54,6 +63,13 @@ export default function ImageStudioPage() {
     [message, setMessage] = useState(''),
     [busy, setBusy] = useState(false),
     [dragging, setDragging] = useState(false)
+  const [autoProgress, setAutoProgress] = useState('')
+  const [autoDraft, setAutoDraft] = useState<AlphaMask | null>(null)
+  const autoCache = useRef<{ baseline: AlphaMask; edited: AlphaMask } | null>(
+    null,
+  )
+  const autoAbort = useRef<AbortController | null>(null)
+  const [copyMode, setCopyMode] = useState<CopyMode>('text')
   const canvas = useRef<HTMLCanvasElement>(null),
     input = useRef<HTMLInputElement>(null),
     generation = useRef(0)
@@ -74,6 +90,9 @@ export default function ImageStudioPage() {
     savedSettings?: AsciiSettings,
   ) => {
     const token = ++generation.current
+    autoAbort.current?.abort()
+    setAutoProgress('')
+    setAutoDraft(null)
     try {
       const safe = await decodeRaster(file)
       if (token !== generation.current) return
@@ -86,6 +105,13 @@ export default function ImageStudioPage() {
       setName(title)
       setView('ascii')
       setEditor(null)
+      autoCache.current = savedSettings?.mask?.automatic
+        ? {
+            baseline:
+              savedSettings.mask.baseline || savedSettings.mask.automatic,
+            edited: savedSettings.mask.automatic,
+          }
+        : null
       if (savedSettings) setSettings(normalizeSettings(savedSettings))
       else
         setSettings((previous) => ({ ...previous, mask: { ...DEFAULT_MASK } }))
@@ -114,6 +140,7 @@ export default function ImageStudioPage() {
     return () => {
       active = false
       generation.current++
+      autoAbort.current?.abort()
     }
   }, [params])
   useEffect(() => {
@@ -121,6 +148,65 @@ export default function ImageStudioPage() {
     const timer = setTimeout(() => setMessage(''), 6000)
     return () => clearTimeout(timer)
   }, [message])
+  useEffect(() => {
+    const paste = (event: ClipboardEvent) => {
+      if (isEditingText(event.target) || document.querySelector('dialog[open]'))
+        return
+      const item = Array.from(event.clipboardData?.items || []).find((item) =>
+        item.type.startsWith('image/'),
+      )
+      const file = item?.getAsFile()
+      if (file) {
+        event.preventDefault()
+        upload(file)
+      }
+    }
+    document.addEventListener('paste', paste)
+    return () => document.removeEventListener('paste', paste)
+  })
+  async function autoSelect() {
+    if (autoProgress) return
+    if (autoCache.current) {
+      setAutoDraft(autoCache.current.edited)
+      return
+    }
+    const controller = new AbortController()
+    autoAbort.current = controller
+    setAutoProgress('자동 선택 준비 중…')
+    try {
+      const result = await segmentSubject(
+        source.image,
+        source.width,
+        source.height,
+        setAutoProgress,
+        controller.signal,
+      )
+      if (controller.signal.aborted) return
+      autoCache.current = { baseline: result, edited: result }
+      setAutoDraft(result)
+    } catch (error) {
+      if (!controller.signal.aborted)
+        setMessage(
+          `자동 선택을 완료하지 못했습니다. ${error instanceof Error ? error.message : ''} 올가미 또는 배경색 제거를 사용할 수 있습니다.`,
+        )
+    } finally {
+      if (autoAbort.current === controller) {
+        autoAbort.current = null
+        setAutoProgress('')
+      }
+    }
+  }
+  async function copy() {
+    try {
+      await copyFrame(copyMode, frame, settings, canvas.current)
+      setMessage('복사했습니다.')
+    } catch (error) {
+      setView('text')
+      setMessage(
+        `${error instanceof Error ? error.message : '복사 실패'} 텍스트 보기에서 직접 선택해 복사하세요.`,
+      )
+    }
+  }
   function upload(file?: File) {
     if (!file) return
     if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
@@ -138,7 +224,7 @@ export default function ImageStudioPage() {
     setBusy(true)
     try {
       const original = document.createElement('canvas'),
-        scale = Math.min(1, 1600 / Math.max(source.width, source.height))
+        scale = 1
       original.width = Math.round(source.width * scale)
       original.height = Math.round(source.height * scale)
       original
@@ -221,6 +307,7 @@ export default function ImageStudioPage() {
             { key: 'original', label: '원본', Icon: Image },
             { key: 'ascii', label: 'ASCII', Icon: FileImage },
             { key: 'compare', label: '비교', Icon: Columns2 },
+            { key: 'text', label: '텍스트', Icon: Type },
           ].map(({ key, label, Icon }) => (
             <button
               key={key}
@@ -269,15 +356,49 @@ export default function ImageStudioPage() {
             }}
           >
             <div
-              className={`preview-piece ${view === 'ascii' ? 'hidden-preview' : ''}`}
+              className={`preview-piece ${view === 'ascii' || view === 'text' ? 'hidden-preview' : ''}`}
             >
               <img src={source.url} alt={`${name} 원본`} />
             </div>
             <div
-              className={`preview-piece ${view === 'original' ? 'hidden-preview' : ''}`}
+              className={`preview-piece ${view === 'original' || view === 'text' ? 'hidden-preview' : ''}`}
             >
               <AsciiCanvas ref={canvas} frame={frame} settings={settings} />
             </div>
+            {view === 'text' && (
+              <div className="text-viewport">
+                <pre
+                  tabIndex={0}
+                  aria-label="ASCII 텍스트"
+                  title="붙여넣는 프로그램의 글꼴에 따라 문자 폭이 달라질 수 있습니다."
+                  style={{
+                    fontFamily: asciiFont(settings),
+                    fontSize: settings.fontSize,
+                    lineHeight: effectiveLineHeight(settings),
+                    background: settings.background,
+                  }}
+                >
+                  {frame.characters.map((char, i) => (
+                    <span key={i}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: settings.fontSize * cellRatio(settings),
+                          color: frame.colors[i],
+                          opacity: frame.opacities[i],
+                        }}
+                      >
+                        {char}
+                      </span>
+                      {(i + 1) % frame.columns === 0 &&
+                      i + 1 < frame.characters.length
+                        ? '\n'
+                        : ''}
+                    </span>
+                  ))}
+                </pre>
+              </div>
+            )}
             {dragging && (
               <div className="drop-overlay">
                 <Upload size={32} />
@@ -305,6 +426,16 @@ export default function ImageStudioPage() {
                 투명 배경
               </label>
               <div className="export-buttons">
+                <select
+                  aria-label="복사 형식"
+                  value={copyMode}
+                  onChange={(e) => setCopyMode(e.target.value as CopyMode)}
+                >
+                  <option value="text">텍스트 복사</option>
+                  <option value="html">서식 포함 복사</option>
+                  <option value="image">이미지 복사</option>
+                </select>
+                <button onClick={copy}>복사</button>
                 <button
                   onClick={() =>
                     canvas.current && exportPng(canvas.current, filename)
@@ -338,9 +469,49 @@ export default function ImageStudioPage() {
             onChange={setSettings}
             onPickColor={() => setEditor('color')}
             onSelectRegion={() => setEditor('lasso')}
+            onAutoSelect={autoSelect}
           />
         </details>
       </div>
+      {autoProgress && (
+        <div className="ai-progress" role="status">
+          <span>{autoProgress}</span>
+          <button
+            className="button secondary small"
+            onClick={() => {
+              autoAbort.current?.abort()
+              autoAbort.current = null
+              setAutoProgress('')
+            }}
+          >
+            취소
+          </button>
+        </div>
+      )}
+      {autoDraft && autoCache.current && (
+        <MaskBrushEditor
+          source={source.image}
+          mask={autoDraft}
+          baseline={autoCache.current.baseline}
+          feather={settings.mask.mode === 'auto' ? settings.mask.feather : 0}
+          onCancel={() => setAutoDraft(null)}
+          onApply={(automatic, feather) => {
+            autoCache.current!.edited = automatic
+            setSettings((previous) => ({
+              ...previous,
+              mask: {
+                ...previous.mask,
+                mode: 'auto',
+                automatic,
+                baseline: autoCache.current!.baseline,
+                feather,
+              },
+            }))
+            setAutoDraft(null)
+            setView('ascii')
+          }}
+        />
+      )}
       {editor && (
         <RegionEditor
           source={source.image}

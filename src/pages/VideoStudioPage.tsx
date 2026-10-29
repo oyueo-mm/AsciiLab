@@ -17,7 +17,8 @@ import {
   drawFrame,
   exportPng,
 } from '../utils/ascii'
-import type { AsciiSettings } from '../utils/ascii'
+import type { AsciiFrame, AsciiSettings } from '../utils/ascii'
+import { copyFrame } from '../utils/clipboard'
 import RegionEditor from '../components/ascii/RegionEditor'
 import { DEFAULT_MASK } from '../utils/mask'
 
@@ -50,6 +51,8 @@ export default function VideoStudioPage() {
     input = useRef<HTMLInputElement>(null),
     sampler = useRef<HTMLCanvasElement | null>(null)
   const resumeAfterPick = useRef(false)
+  const currentFrame = useRef<AsciiFrame | null>(null)
+  const [copyFallback, setCopyFallback] = useState<string | null>(null)
   const draw = useCallback(() => {
     const v = video.current,
       c = canvas.current
@@ -63,6 +66,7 @@ export default function VideoStudioPage() {
       sampler.current,
     )
     drawFrame(c, frame, settings)
+    currentFrame.current = frame
   }, [settings])
   useEffect(() => {
     if (ready) draw()
@@ -99,6 +103,8 @@ export default function VideoStudioPage() {
     video.current?.pause()
     setPlaying(false)
     setReady(false)
+    currentFrame.current = null
+    setCopyFallback(null)
     setCurrent(0)
     setDuration(0)
     setName(file.name)
@@ -148,6 +154,25 @@ export default function VideoStudioPage() {
         <h1>영상 변환</h1>
       </div>
       <div className="studio-toolbar">
+        <button
+          className="button secondary small"
+          disabled={!ready}
+          onClick={async () => {
+            if (!currentFrame.current) return
+            const snapshot = currentFrame.current
+            try {
+              await copyFrame('text', snapshot, settings, canvas.current)
+              setMessage('현재 프레임의 텍스트를 복사했습니다.')
+            } catch {
+              setCopyFallback(snapshot.text)
+              setMessage(
+                '클립보드 권한을 확인하거나 아래 텍스트를 직접 선택해 복사하세요.',
+              )
+            }
+          }}
+        >
+          프레임 텍스트 복사
+        </button>
         <div className="toolbar-group">
           <button
             className="button primary small"
@@ -189,6 +214,19 @@ export default function VideoStudioPage() {
           <Camera size={15} /> 프레임 PNG 저장
         </button>
       </div>
+      {copyFallback !== null && (
+        <div className="text-viewport video-text">
+          <button
+            className="button secondary small"
+            onClick={() => setCopyFallback(null)}
+          >
+            텍스트 닫기
+          </button>
+          <pre tabIndex={0} aria-label="현재 프레임 텍스트">
+            {copyFallback}
+          </pre>
+        </div>
+      )}
       <div className="editor-layout">
         <div className="editor-main">
           <div className="preview-header">
