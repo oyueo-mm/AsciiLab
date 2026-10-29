@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Camera,
-  Check,
   Film,
   Pause,
   Play,
@@ -19,6 +18,8 @@ import {
   exportPng,
 } from '../utils/ascii'
 import type { AsciiSettings } from '../utils/ascii'
+import RegionEditor from '../components/ascii/RegionEditor'
+import { DEFAULT_MASK } from '../utils/mask'
 
 function timeLabel(seconds: number) {
   const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0
@@ -41,12 +42,14 @@ export default function VideoStudioPage() {
     [current, setCurrent] = useState(0),
     [duration, setDuration] = useState(0),
     [message, setMessage] = useState(''),
-    [dimensions, setDimensions] = useState({ columns: 0, rows: 0 }),
+    [picking, setPicking] = useState<HTMLCanvasElement | null>(null),
+    [loadError, setLoadError] = useState(false),
     [dragging, setDragging] = useState(false)
   const video = useRef<HTMLVideoElement>(null),
     canvas = useRef<HTMLCanvasElement>(null),
     input = useRef<HTMLInputElement>(null),
     sampler = useRef<HTMLCanvasElement | null>(null)
+  const resumeAfterPick = useRef(false)
   const draw = useCallback(() => {
     const v = video.current,
       c = canvas.current
@@ -60,11 +63,6 @@ export default function VideoStudioPage() {
       sampler.current,
     )
     drawFrame(c, frame, settings)
-    setDimensions((previous) =>
-      previous.columns === frame.columns && previous.rows === frame.rows
-        ? previous
-        : { columns: frame.columns, rows: frame.rows },
-    )
   }, [settings])
   useEffect(() => {
     if (ready) draw()
@@ -105,6 +103,8 @@ export default function VideoStudioPage() {
     setDuration(0)
     setName(file.name)
     setMessage('')
+    setLoadError(false)
+    setSettings((previous) => ({ ...previous, mask: { ...DEFAULT_MASK } }))
     setUrl(URL.createObjectURL(file))
   }
   const toggle = async () => {
@@ -120,17 +120,32 @@ export default function VideoStudioPage() {
         )
       }
   }
+  const pickBackground = () => {
+    const v = video.current
+    if (!v || !ready) return
+    resumeAfterPick.current = !v.paused
+    v.pause()
+    const snapshot = document.createElement('canvas'),
+      scale = Math.min(1, 1920 / v.videoWidth)
+    snapshot.width = Math.round(v.videoWidth * scale)
+    snapshot.height = Math.round(v.videoHeight * scale)
+    snapshot
+      .getContext('2d')!
+      .drawImage(v, 0, 0, snapshot.width, snapshot.height)
+    setPicking(snapshot)
+  }
+  const closePicker = () => {
+    setPicking(null)
+    if (resumeAfterPick.current)
+      void video.current
+        ?.play()
+        .catch(() => setMessage('재생 버튼을 눌러 영상을 이어서 재생하세요.'))
+    resumeAfterPick.current = false
+  }
   return (
     <div className="studio-page">
       <div className="page-heading">
-        <div>
-          <span className="eyebrow">MOVING IMAGE → ASCII</span>
-          <h1>
-            Video Studio<span>.</span>
-          </h1>
-          <p>매 프레임이 문자가 되는 순간. 움직임을 새롭게 그려보세요.</p>
-        </div>
-        <span className="page-index">STUDIO / 02</span>
+        <h1>영상 변환</h1>
       </div>
       <div className="studio-toolbar">
         <div className="toolbar-group">
@@ -154,12 +169,12 @@ export default function VideoStudioPage() {
           <button
             className="icon-button"
             aria-label="영상 설정 초기화"
+            title="영상 설정 초기화"
             onClick={() => setSettings({ ...DEFAULT_SETTINGS, columns: 100 })}
           >
             <RotateCcw size={16} />
           </button>
         </div>
-        <span className="toolbar-label">REAL-TIME ASCII PREVIEW</span>
         <button
           className="button secondary small"
           disabled={!ready}
@@ -177,18 +192,23 @@ export default function VideoStudioPage() {
       <div className="editor-layout">
         <div className="editor-main">
           <div className="preview-header">
-            <span>
-              <i className={`status-dot ${!ready ? 'inactive' : ''}`} />
-              {name || '아직 선택된 영상이 없습니다'}
-            </span>
-            <span>
-              {ready
-                ? `${video.current?.videoWidth} × ${video.current?.videoHeight} PX`
-                : 'MP4 / WEBM / MOV'}
-            </span>
+            <span>{name || '영상'}</span>
+            <label className="transparency-option">
+              <input
+                type="checkbox"
+                checked={settings.transparentBackground}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    transparentBackground: e.target.checked,
+                  })
+                }
+              />
+              투명 배경
+            </label>
           </div>
           <div
-            className={`preview-stage video-stage ${dragging ? 'is-dragging' : ''}`}
+            className={`preview-stage video-stage ${dragging ? 'is-dragging' : ''} ${settings.transparentBackground ? 'checkerboard' : ''}`}
             onDragOver={(e) => {
               e.preventDefault()
               setDragging(true)
@@ -223,6 +243,7 @@ export default function VideoStudioPage() {
               onError={() => {
                 setReady(false)
                 setPlaying(false)
+                setLoadError(true)
                 setMessage(
                   '이 영상의 형식 또는 코덱을 재생할 수 없습니다. H.264 MP4나 VP8/VP9 WebM을 시도해 주세요.',
                 )
@@ -242,11 +263,13 @@ export default function VideoStudioPage() {
                 <span className="upload-symbol">
                   <Film size={34} strokeWidth={1} />
                 </span>
-                <h2>
-                  {url ? '영상을 불러오는 중' : '움직임을 문자로 옮겨보세요'}
-                </h2>
-                <p>영상을 끌어놓거나 클릭해서 선택하세요.</p>
-                <span>MP4, WEBM 등 브라우저 지원 형식 · 서버 업로드 없음</span>
+                <span>
+                  {loadError
+                    ? '다른 영상 선택'
+                    : url
+                      ? '불러오는 중…'
+                      : '영상 선택'}
+                </span>
               </button>
             )}
             {dragging && (
@@ -260,6 +283,7 @@ export default function VideoStudioPage() {
             <button
               className="play-button"
               aria-label={playing ? '영상 일시정지' : '영상 재생'}
+              title={playing ? '영상 일시정지' : '영상 재생'}
               disabled={!ready}
               onClick={toggle}
             >
@@ -284,45 +308,50 @@ export default function VideoStudioPage() {
             <button
               className="icon-button"
               aria-label={muted ? '음소거 해제' : '음소거'}
+              title={muted ? '음소거 해제' : '음소거'}
               onClick={() => setMuted(!muted)}
             >
               {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
             </button>
           </div>
-          <div className="preview-status">
-            <span>
-              {ready
-                ? `${dimensions.columns} COL × ${dimensions.rows} ROW / ${settings.fps} FPS LIMIT`
-                : 'WAITING FOR YOUR FOOTAGE'}
-            </span>
-            <span>
-              <Check size={12} />{' '}
-              {playing ? '재생 중' : ready ? '일시정지' : '로컬 프리뷰'}
-            </span>
-          </div>
-          <div className="video-note">
-            <Film size={18} />
-            <div>
-              <strong>빠르게 실험하고, 원하는 순간을 저장하세요.</strong>
-              <p>
-                프리뷰는 설정한 FPS로 변환됩니다. 긴 영상도 전체 변환을 기다릴
-                필요가 없습니다.
-                <br />
-                현재 프레임은 PNG로 저장할 수 있으며, 영상 전체 내보내기는
-                지원하지 않습니다.
-              </p>
-            </div>
-          </div>
         </div>
         <details className="mobile-settings" open>
           <summary>변환 설정 열기 / 닫기</summary>
-          <Controls settings={settings} onChange={setSettings} video />
+          <Controls
+            settings={settings}
+            onChange={setSettings}
+            video
+            onPickColor={pickBackground}
+            disabled={!ready}
+          />
         </details>
       </div>
+      {picking && (
+        <RegionEditor
+          source={picking}
+          width={picking.width}
+          height={picking.height}
+          mode="color"
+          feather={settings.mask.feather}
+          onCancel={closePicker}
+          onPick={(keyColor) => {
+            setSettings((previous) => ({
+              ...previous,
+              mask: { ...previous.mask, mode: 'color', keyColor },
+            }))
+            closePicker()
+          }}
+          onApply={() => {}}
+        />
+      )}
       {message && (
         <div className="toast" role="alert">
           {message}
-          <button aria-label="알림 닫기" onClick={() => setMessage('')}>
+          <button
+            title="알림 닫기"
+            aria-label="알림 닫기"
+            onClick={() => setMessage('')}
+          >
             <X size={15} />
           </button>
         </div>

@@ -1,3 +1,6 @@
+import { applyColorMask, createRegionMask, DEFAULT_MASK } from './mask'
+import type { MaskSettings } from './mask'
+
 export const CHARSETS = {
   Classic: '@#%*+=-:. ',
   Dense:
@@ -16,6 +19,8 @@ export type AsciiSettings = {
   fontSize: number
   lineHeight: number
   fps: number
+  mask: MaskSettings
+  transparentBackground: boolean
 }
 export const DEFAULT_SETTINGS: AsciiSettings = {
   columns: 120,
@@ -29,6 +34,19 @@ export const DEFAULT_SETTINGS: AsciiSettings = {
   fontSize: 12,
   lineHeight: 1.1,
   fps: 20,
+  mask: { ...DEFAULT_MASK },
+  transparentBackground: false,
+}
+export function normalizeSettings(
+  value?: Omit<Partial<AsciiSettings>, 'mask'> & {
+    mask?: Partial<MaskSettings>
+  },
+): AsciiSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...value,
+    mask: { ...DEFAULT_MASK, ...value?.mask },
+  }
 }
 export type AsciiFrame = {
   columns: number
@@ -36,23 +54,29 @@ export type AsciiFrame = {
   text: string
   characters: string[]
   colors: string[]
+  opacities: Float32Array
 }
 export function characterFor(value: number, settings: AsciiSettings): string {
+  return createCharacterMapper(settings)(value)
+}
+function createCharacterMapper(settings: AsciiSettings) {
   const chars = Array.from(
     settings.charset === 'Custom'
       ? settings.custom || ' '
       : CHARSETS[settings.charset],
   )
-  let light =
-    Math.max(
-      0,
-      Math.min(
-        255,
-        (value - 127.5) * settings.contrast + 127.5 + settings.brightness,
-      ),
-    ) / 255
-  if (settings.invert) light = 1 - light
-  return chars[Math.round((1 - light) * (chars.length - 1))]
+  return (value: number) => {
+    let light =
+      Math.max(
+        0,
+        Math.min(
+          255,
+          (value - 127.5) * settings.contrast + 127.5 + settings.brightness,
+        ),
+      ) / 255
+    if (settings.invert) light = 1 - light
+    return chars[Math.round((1 - light) * (chars.length - 1))]
+  }
 }
 export function pixelsToFrame(
   data: Uint8ClampedArray,
@@ -63,15 +87,20 @@ export function pixelsToFrame(
   const characters: string[] = [],
     colors: string[] = [],
     lines: string[] = []
+  const opacities = new Float32Array(columns * rows)
+  const mapCharacter = createCharacterMapper(settings)
   for (let y = 0; y < rows; y++) {
     let line = ''
     for (let x = 0; x < columns; x++) {
       const i = (y * columns + x) * 4,
         alpha = data[i + 3] / 255
-      const r = data[i] * alpha,
-        g = data[i + 1] * alpha,
-        b = data[i + 2] * alpha
-      const char = characterFor(0.2126 * r + 0.7152 * g + 0.0722 * b, settings)
+      const r = data[i],
+        g = data[i + 1],
+        b = data[i + 2]
+      // Excluded pixels must remain empty, even with inversion or a custom set without spaces.
+      const char =
+        alpha > 0 ? mapCharacter(0.2126 * r + 0.7152 * g + 0.0722 * b) : ' '
+      opacities[y * columns + x] = alpha
       characters.push(char)
       line += char
       colors.push(
@@ -84,7 +113,14 @@ export function pixelsToFrame(
     }
     lines.push(line)
   }
-  return { columns, rows, text: lines.join('\n'), characters, colors }
+  return {
+    columns,
+    rows,
+    text: lines.join('\n'),
+    characters,
+    colors,
+    opacities,
+  }
 }
 export function convertSource(
   source: CanvasImageSource,
@@ -92,6 +128,7 @@ export function convertSource(
   height: number,
   settings: AsciiSettings,
   sampler?: HTMLCanvasElement,
+  options?: { maskApplied?: boolean },
 ): AsciiFrame {
   const columns = Math.max(24, Math.min(300, Math.round(settings.columns)))
   const rows = Math.max(
@@ -102,16 +139,24 @@ export function convertSource(
     ),
   )
   const sample = sampler || document.createElement('canvas')
-  sample.width = columns
-  sample.height = rows
+  if (sample.width !== columns) sample.width = columns
+  if (sample.height !== rows) sample.height = rows
   const ctx = sample.getContext('2d', { willReadFrequently: true })!
+  ctx.clearRect(0, 0, columns, rows)
   ctx.drawImage(source, 0, 0, columns, rows)
-  return pixelsToFrame(
-    ctx.getImageData(0, 0, columns, rows).data,
-    columns,
-    rows,
-    settings,
-  )
+  const mask = settings.mask || DEFAULT_MASK
+  if (!options?.maskApplied && mask.mode === 'lasso' && mask.region) {
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.drawImage(
+      createRegionMask(columns, rows, mask.region, mask.feather),
+      0,
+      0,
+    )
+    ctx.globalCompositeOperation = 'source-over'
+  }
+  const pixels = ctx.getImageData(0, 0, columns, rows)
+  if (!options?.maskApplied) applyColorMask(pixels.data, mask)
+  return pixelsToFrame(pixels.data, columns, rows, settings)
 }
 export function drawFrame(
   canvas: HTMLCanvasElement,
@@ -120,19 +165,28 @@ export function drawFrame(
 ) {
   const cell = settings.fontSize * 0.6,
     line = settings.fontSize * settings.lineHeight
-  canvas.width = Math.ceil(frame.columns * cell)
-  canvas.height = Math.ceil(frame.rows * line)
+  const width = Math.ceil(frame.columns * cell),
+    height = Math.ceil(frame.rows * line)
+  if (canvas.width !== width) canvas.width = width
+  if (canvas.height !== height) canvas.height = height
   const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = settings.background
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.globalAlpha = 1
+  ctx.clearRect(0, 0, width, height)
+  if (!settings.transparentBackground) {
+    ctx.fillStyle = settings.background
+    ctx.fillRect(0, 0, width, height)
+  }
   ctx.font = `${settings.fontSize}px "Courier New", monospace`
   ctx.textBaseline = 'top'
   for (let y = 0; y < frame.rows; y++)
     for (let x = 0; x < frame.columns; x++) {
       const i = y * frame.columns + x
+      if (!frame.opacities[i] || frame.characters[i] === ' ') continue
+      ctx.globalAlpha = frame.opacities[i]
       ctx.fillStyle = frame.colors[i]
       ctx.fillText(frame.characters[i], x * cell, y * line)
     }
+  ctx.globalAlpha = 1
 }
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob),
@@ -164,10 +218,10 @@ export function exportHtml(
   const content = frame.characters
     .map(
       (c, i) =>
-        `<span style="color:${frame.colors[i]}">${escapeHtml(c)}</span>${(i + 1) % frame.columns === 0 ? '\n' : ''}`,
+        `<span style="color:${frame.colors[i]};opacity:${frame.opacities[i].toFixed(3)}">${escapeHtml(c)}</span>${(i + 1) % frame.columns === 0 ? '\n' : ''}`,
     )
     .join('')
-  const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><title>${escapeHtml(name)}</title><style>body{background:${settings.background};margin:24px}pre{font:${settings.fontSize}px/${settings.lineHeight} 'Courier New',monospace;letter-spacing:0}</style><pre>${content}</pre></html>`
+  const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><title>${escapeHtml(name)}</title><style>body{background:${settings.transparentBackground ? 'transparent' : settings.background};margin:24px}pre{font:${settings.fontSize}px/${settings.lineHeight} 'Courier New',monospace;letter-spacing:0}</style><pre>${content}</pre></html>`
   downloadBlob(
     new Blob([html], { type: 'text/html;charset=utf-8' }),
     `${name}.html`,

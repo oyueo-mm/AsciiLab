@@ -1,12 +1,23 @@
 import { SlidersHorizontal } from 'lucide-react'
 import { CHARSETS } from '../../utils/ascii'
 import type { AsciiSettings } from '../../utils/ascii'
+import MaskControls from './MaskControls'
 type Props = {
   settings: AsciiSettings
   onChange: (settings: AsciiSettings) => void
   video?: boolean
+  onPickColor?: () => void
+  onSelectRegion?: () => void
+  disabled?: boolean
 }
-export default function Controls({ settings: s, onChange, video }: Props) {
+export default function Controls({
+  settings: s,
+  onChange,
+  video,
+  onPickColor,
+  onSelectRegion,
+  disabled,
+}: Props) {
   const set = <K extends keyof AsciiSettings>(
     key: K,
     value: AsciiSettings[K],
@@ -44,10 +55,17 @@ export default function Controls({ settings: s, onChange, video }: Props) {
       <div className="panel-heading">
         <SlidersHorizontal size={15} />
         <h2>변환 설정</h2>
-        <span>PARAMETERS</span>
       </div>
+      <MaskControls
+        mask={s.mask}
+        onChange={(mask) => set('mask', mask)}
+        video={video}
+        onPick={onPickColor}
+        onSelect={onSelectRegion}
+        disabled={disabled}
+      />
       <div className="control-section">
-        <h3>01 / 해상도</h3>
+        <h3>해상도</h3>
         {slider(
           'columns',
           '문자 밀도 · 가로 문자 수',
@@ -55,13 +73,10 @@ export default function Controls({ settings: s, onChange, video }: Props) {
           video ? 200 : 260,
           2,
         )}
-        <p className="control-hint">
-          높이는 원본 비율에 맞춰 자동으로 계산됩니다.
-        </p>
         {video && slider('fps', '프리뷰 FPS', 5, 30, 1, ' fps')}
       </div>
       <div className="control-section">
-        <h3>02 / 문자</h3>
+        <h3>문자</h3>
         <label className="control">
           문자 세트
           <select
@@ -95,7 +110,7 @@ export default function Controls({ settings: s, onChange, video }: Props) {
         {slider('lineHeight', '줄 간격 · 비율 보정', 0.8, 1.6, 0.05)}
       </div>
       <div className="control-section">
-        <h3>03 / 톤과 색상</h3>
+        <h3>톤과 색상</h3>
         {slider('brightness', '밝기', -100, 100)}
         {slider('contrast', '대비', 0.2, 2.5, 0.05)}
         <label className="switch-row">
@@ -116,9 +131,9 @@ export default function Controls({ settings: s, onChange, video }: Props) {
               set('color', e.target.value as AsciiSettings['color'])
             }
           >
-            <option value="white">흑백 / White</option>
-            <option value="mint">단색 / Mint</option>
-            <option value="original">원본 색상 / Original</option>
+            <option value="white">흑백</option>
+            <option value="mint">민트</option>
+            <option value="original">원본 색상</option>
           </select>
         </label>
         <label className="color-row">
@@ -134,9 +149,6 @@ export default function Controls({ settings: s, onChange, video }: Props) {
           </span>
         </label>
       </div>
-      <p className="local-note">
-        <span className="status-dot" /> 모든 변환은 이 브라우저에서 처리됩니다.
-      </p>
     </aside>
   )
 }

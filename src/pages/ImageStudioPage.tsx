@@ -1,11 +1,11 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  Check,
   Columns2,
   Download,
   FileImage,
   Image,
+  Lasso,
   RotateCcw,
   Save,
   Upload,
@@ -19,10 +19,14 @@ import {
   downloadBlob,
   exportHtml,
   exportPng,
+  normalizeSettings,
 } from '../utils/ascii'
 import type { AsciiSettings } from '../utils/ascii'
 import { canvasBlob, getArtwork, saveArtwork } from '../utils/storage'
 import { createSample } from '../utils/sample'
+import { DEFAULT_MASK, maskImage } from '../utils/mask'
+import { decodeRaster } from '../utils/image'
+import RegionEditor from '../components/ascii/RegionEditor'
 
 type Source = {
   image: HTMLImageElement | HTMLCanvasElement
@@ -45,6 +49,7 @@ export default function ImageStudioPage() {
     ...DEFAULT_SETTINGS,
   })
   const [name, setName] = useState('Moon study'),
+    [editor, setEditor] = useState<'color' | 'lasso' | null>(null),
     [view, setView] = useState('ascii'),
     [message, setMessage] = useState(''),
     [busy, setBusy] = useState(false),
@@ -52,9 +57,16 @@ export default function ImageStudioPage() {
   const canvas = useRef<HTMLCanvasElement>(null),
     input = useRef<HTMLInputElement>(null),
     generation = useRef(0)
+  const masked = useMemo(
+    () => maskImage(source.image, source.width, source.height, settings.mask),
+    [source, settings.mask],
+  )
   const frame = useMemo(
-    () => convertSource(source.image, source.width, source.height, settings),
-    [source, settings],
+    () =>
+      convertSource(masked, source.width, source.height, settings, undefined, {
+        maskApplied: true,
+      }),
+    [masked, source.width, source.height, settings],
   )
   const load = async (
     file: Blob,
@@ -62,27 +74,9 @@ export default function ImageStudioPage() {
     savedSettings?: AsciiSettings,
   ) => {
     const token = ++generation.current
-    const url = URL.createObjectURL(file)
     try {
-      const image = new window.Image()
-      image.src = url
-      await image.decode()
+      const safe = await decodeRaster(file)
       if (token !== generation.current) return
-      if (
-        !image.naturalWidth ||
-        image.naturalWidth * image.naturalHeight > 80_000_000
-      )
-        throw new Error(
-          '이미지가 너무 큽니다. 8천만 픽셀 이하의 이미지를 선택해 주세요.',
-        )
-      const safe = document.createElement('canvas'),
-        scale = Math.min(
-          1,
-          2400 / Math.max(image.naturalWidth, image.naturalHeight),
-        )
-      safe.width = Math.round(image.naturalWidth * scale)
-      safe.height = Math.round(image.naturalHeight * scale)
-      safe.getContext('2d')!.drawImage(image, 0, 0, safe.width, safe.height)
       setSource({
         image: safe,
         url: safe.toDataURL(),
@@ -91,8 +85,10 @@ export default function ImageStudioPage() {
       })
       setName(title)
       setView('ascii')
-      if (savedSettings) setSettings(savedSettings)
-      setMessage('이미지를 불러왔습니다. 설정을 조절해 보세요.')
+      setEditor(null)
+      if (savedSettings) setSettings(normalizeSettings(savedSettings))
+      else
+        setSettings((previous) => ({ ...previous, mask: { ...DEFAULT_MASK } }))
     } catch (error) {
       if (token === generation.current)
         setMessage(
@@ -100,8 +96,6 @@ export default function ImageStudioPage() {
             ? error.message
             : '이미지를 읽을 수 없습니다. PNG, JPG, WebP 등 브라우저가 지원하는 파일을 선택해 주세요.',
         )
-    } finally {
-      URL.revokeObjectURL(url)
     }
   }
   useEffect(() => {
@@ -180,14 +174,7 @@ export default function ImageStudioPage() {
   return (
     <div className="studio-page">
       <div className="page-heading">
-        <div>
-          <span className="eyebrow">STILL IMAGE → ASCII</span>
-          <h1>
-            Image Studio<span>.</span>
-          </h1>
-          <p>한 장의 이미지에, 당신만의 문자와 질감을 입혀보세요.</p>
-        </div>
-        <span className="page-index">STUDIO / 01</span>
+        <h1>이미지 변환</h1>
       </div>
       <div className="studio-toolbar">
         <div className="toolbar-group">
@@ -218,6 +205,15 @@ export default function ImageStudioPage() {
             }}
           >
             <RotateCcw size={16} />
+          </button>
+          <button
+            className="icon-button"
+            title="영역 선택"
+            aria-label="영역 선택"
+            aria-pressed={settings.mask.mode === 'lasso'}
+            onClick={() => setEditor('lasso')}
+          >
+            <Lasso size={17} />
           </button>
         </div>
         <div className="segmented" aria-label="미리보기 모드">
@@ -250,20 +246,17 @@ export default function ImageStudioPage() {
         <div className="editor-main">
           <div className="preview-header">
             <label>
-              <span className="status-dot" />
               <input
                 aria-label="작품 이름"
+                title={`${source.width} × ${source.height}`}
                 maxLength={80}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
-            <span>
-              {source.width} × {source.height} PX
-            </span>
           </div>
           <div
-            className={`preview-stage ${view === 'compare' ? 'compare-view' : ''} ${dragging ? 'is-dragging' : ''}`}
+            className={`preview-stage ${view === 'compare' ? 'compare-view' : ''} ${dragging ? 'is-dragging' : ''} ${settings.transparentBackground ? 'checkerboard' : ''}`}
             onDragOver={(e) => {
               e.preventDefault()
               setDragging(true)
@@ -278,13 +271,11 @@ export default function ImageStudioPage() {
             <div
               className={`preview-piece ${view === 'ascii' ? 'hidden-preview' : ''}`}
             >
-              <span className="preview-tag">ORIGINAL</span>
               <img src={source.url} alt={`${name} 원본`} />
             </div>
             <div
               className={`preview-piece ${view === 'original' ? 'hidden-preview' : ''}`}
             >
-              <span className="preview-tag">ASCII OUTPUT</span>
               <AsciiCanvas ref={canvas} frame={frame} settings={settings} />
             </div>
             {dragging && (
@@ -294,61 +285,97 @@ export default function ImageStudioPage() {
               </div>
             )}
           </div>
-          <div className="preview-status">
-            <span>
-              {frame.columns} COL × {frame.rows} ROW <b>/</b>{' '}
-              {frame.characters.length.toLocaleString()} CHARACTERS
-            </span>
-            <span>
-              <Check size={12} /> 실시간 미리보기
-            </span>
-          </div>
           <div className="export-panel">
             <div>
               <Download size={17} />
-              <span>
-                작품 내보내기<small>현재 설정으로 저장됩니다</small>
-              </span>
+              <span>내보내기</span>
             </div>
-            <div className="export-buttons">
-              <button
-                onClick={() =>
-                  canvas.current && exportPng(canvas.current, filename)
-                }
-              >
-                PNG <Download size={13} />
-              </button>
-              <button
-                onClick={() =>
-                  downloadBlob(
-                    new Blob([frame.text], {
-                      type: 'text/plain;charset=utf-8',
-                    }),
-                    `${filename}.txt`,
-                  )
-                }
-              >
-                TXT <Download size={13} />
-              </button>
-              <button onClick={() => exportHtml(frame, settings, filename)}>
-                HTML <Download size={13} />
-              </button>
+            <div className="export-actions">
+              <label className="transparency-option">
+                <input
+                  type="checkbox"
+                  checked={settings.transparentBackground}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      transparentBackground: e.target.checked,
+                    })
+                  }
+                />
+                투명 배경
+              </label>
+              <div className="export-buttons">
+                <button
+                  onClick={() =>
+                    canvas.current && exportPng(canvas.current, filename)
+                  }
+                >
+                  PNG <Download size={13} />
+                </button>
+                <button
+                  onClick={() =>
+                    downloadBlob(
+                      new Blob([frame.text], {
+                        type: 'text/plain;charset=utf-8',
+                      }),
+                      `${filename}.txt`,
+                    )
+                  }
+                >
+                  TXT <Download size={13} />
+                </button>
+                <button onClick={() => exportHtml(frame, settings, filename)}>
+                  HTML <Download size={13} />
+                </button>
+              </div>
             </div>
           </div>
-          <p className="editor-tip">
-            이미지를 프리뷰 위로 끌어놓아도 됩니다. GIF는 첫 프레임으로
-            변환됩니다.
-          </p>
         </div>
         <details className="mobile-settings" open>
           <summary>변환 설정 열기 / 닫기</summary>
-          <Controls settings={settings} onChange={setSettings} />
+          <Controls
+            settings={settings}
+            onChange={setSettings}
+            onPickColor={() => setEditor('color')}
+            onSelectRegion={() => setEditor('lasso')}
+          />
         </details>
       </div>
+      {editor && (
+        <RegionEditor
+          source={source.image}
+          width={source.width}
+          height={source.height}
+          mode={editor}
+          region={settings.mask.region}
+          feather={settings.mask.feather}
+          onCancel={() => setEditor(null)}
+          onPick={(keyColor) => {
+            setSettings((previous) => ({
+              ...previous,
+              mask: { ...previous.mask, mode: 'color', keyColor },
+            }))
+            setEditor(null)
+            setView('ascii')
+          }}
+          onApply={(region, feather) => {
+            setSettings((previous) => ({
+              ...previous,
+              mask: { ...previous.mask, mode: 'lasso', region, feather },
+            }))
+            setEditor(null)
+            setView('ascii')
+          }}
+        />
+      )}
       {message && (
         <div className="toast" role="status">
           {message}
-          <button aria-label="알림 닫기" onClick={() => setMessage('')}>
+          <button
+            title="알림 닫기"
+            aria-label="알림 닫기"
+            onClick={() => setMessage('')}
+          >
             <X size={15} />
           </button>
         </div>
