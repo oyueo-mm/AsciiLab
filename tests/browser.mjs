@@ -51,7 +51,9 @@ try {
   await page.evaluate(() => window.scrollTo(0, 0))
   await page.screenshot({ path: '.qa/home-desktop.png', fullPage: true })
   await page.getByRole('link', { name: /이미지 변환 시작/ }).click()
-  await page.getByRole('heading', { name: 'Image Studio.' }).waitFor()
+  await page
+    .getByRole('heading', { name: '이미지 변환', exact: true })
+    .waitFor()
   await check(
     'Image source upload and settings update actual pixels',
     async () => {
@@ -131,7 +133,7 @@ try {
       .getByRole('status')
       .filter({ hasText: '갤러리에 저장했습니다' })
       .waitFor()
-    await page.getByRole('link', { name: 'Gallery 04' }).click()
+    await page.getByRole('link', { name: 'Gallery', exact: true }).click()
     await page
       .getByRole('heading', { name: 'QA saved artwork', exact: true })
       .waitFor()
@@ -152,11 +154,11 @@ try {
       '160',
     )
     assert.equal(await page.getByLabel('사용자 문자').inputValue(), '@#<>. ')
-    await page.getByRole('link', { name: 'Gallery 04' }).click()
+    await page.getByRole('link', { name: 'Gallery', exact: true }).click()
     await page.getByRole('button', { name: 'QA saved artwork 삭제' }).click()
     await page.getByRole('button', { name: '삭제', exact: true }).click()
     await page
-      .getByRole('heading', { name: '첫 번째 실험을 기다리고 있어요.' })
+      .getByRole('heading', { name: '저장된 작품이 없습니다.' })
       .waitFor()
   })
   await check(
@@ -199,7 +201,7 @@ try {
         return done
       })
       await writeFile('.qa/sample.webm', Buffer.from(bytes))
-      await page.getByRole('link', { name: 'Video 03' }).click()
+      await page.getByRole('link', { name: 'Video', exact: true }).click()
       await page.getByLabel('영상 파일 선택').setInputFiles('.qa/sample.webm')
       await page
         .getByRole('button', { name: '영상 재생', exact: true })
@@ -252,7 +254,7 @@ try {
       }
       if (width === 390) {
         await page.getByRole('button', { name: '메뉴 열기' }).click()
-        await page.getByRole('link', { name: 'Home 01' }).click()
+        await page.getByRole('link', { name: 'Home', exact: true }).click()
         await page.waitForFunction(
           () => !document.querySelector('.sidebar.mobile-open'),
         )
