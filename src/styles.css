@@ -97,6 +97,213 @@
   --mono: 'Courier New', monospace;
   color-scheme: dark;
 }
+.studio-page .page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.studio-toolbar {
+  flex-wrap: wrap;
+}
+.workspace-layout {
+  --settings-width: 270px;
+  grid-template-columns: minmax(0, 1fr) var(--settings-width);
+  transition:
+    grid-template-columns 0.2s,
+    gap 0.2s;
+}
+.workspace-layout.settings-collapsed {
+  grid-template-columns: minmax(0, 1fr) 0px;
+  gap: 0;
+}
+.settings-rail {
+  min-width: 0;
+  overflow: hidden;
+  position: sticky;
+  top: 16px;
+  max-height: calc(100dvh - 190px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  transition: opacity 0.2s;
+}
+.settings-rail[aria-hidden='true'] {
+  opacity: 0;
+  pointer-events: none;
+}
+.settings-rail .settings-panel {
+  min-width: var(--settings-width);
+}
+.settings-group-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  background: transparent;
+  color: #bbb;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+}
+.settings-group-toggle svg.is-closed {
+  transform: rotate(-90deg);
+}
+.control-section:has([hidden]) h3 {
+  margin-bottom: 0;
+}
+.preview-header {
+  flex-wrap: wrap;
+}
+.preview-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.preview-zoom .icon-button {
+  width: 28px;
+  height: 28px;
+}
+.preview-zoom output {
+  font: 10px var(--mono);
+  color: #bbb;
+  min-width: 42px;
+  text-align: center;
+}
+.zoom-text-button {
+  background: transparent;
+  color: #aaa;
+  font: 10px var(--mono);
+  padding: 6px;
+}
+.workspace-layout .preview-stage {
+  padding: 0;
+  min-height: 280px;
+  height: auto;
+  flex: 1;
+}
+.workspace-layout .editor-main {
+  display: flex;
+  flex-direction: column;
+  height: max(450px, calc(100dvh - 190px));
+}
+.workspace-layout .preview-header,
+.workspace-layout .export-panel,
+.workspace-layout .timeline {
+  flex-shrink: 0;
+}
+.preview-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  cursor: grab;
+}
+.preview-viewport:active {
+  cursor: grabbing;
+}
+.preview-transform {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center;
+  user-select: none;
+  will-change: transform;
+}
+.preview-transform .ascii-canvas,
+.preview-transform img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  pointer-events: none;
+}
+.workspace-layout .compare-view {
+  gap: 0;
+}
+.workspace-layout .compare-view .preview-piece {
+  padding: 0;
+}
+.copy-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.copy-actions {
+  display: flex;
+  gap: 4px;
+}
+.copy-width {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #aaa;
+}
+.workspace-layout .export-panel {
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+.workspace-layout .export-buttons {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.workspace-layout .text-viewport pre {
+  min-width: max-content;
+  padding: 12px;
+}
+@media (min-width: 1600px) {
+  .workspace-layout {
+    --settings-width: 290px;
+  }
+  .workspace-layout .editor-main {
+    height: max(450px, calc(100dvh - 220px));
+  }
+}
+@media (min-width: 721px) and (max-width: 1150px) {
+  .workspace-layout {
+    --settings-width: 235px;
+  }
+}
+@media (max-width: 720px) {
+  .workspace-layout,
+  .workspace-layout.settings-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .settings-rail {
+    position: static;
+    max-height: 60dvh;
+  }
+  .settings-rail[aria-hidden='true'] {
+    display: none;
+  }
+  .settings-rail .settings-panel {
+    min-width: 0;
+  }
+  .workspace-layout .preview-stage {
+    height: 380px;
+    min-height: 280px;
+    flex: none;
+  }
+  .workspace-layout .editor-main {
+    height: auto;
+  }
+  .settings-toggle span {
+    display: none;
+  }
+  .preview-header label:first-child {
+    flex: 1;
+  }
+  .preview-zoom {
+    margin-left: 0;
+  }
+}
 * {
   box-sizing: border-box;
 }

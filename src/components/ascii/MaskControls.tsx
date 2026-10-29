@@ -1,6 +1,7 @@
 import { Lasso, Pipette, RotateCcw } from 'lucide-react'
 import { DEFAULT_MASK } from '../../utils/mask'
 import type { MaskSettings } from '../../utils/mask'
+import { SettingsGroup } from './SettingsPanel'
 type Props = {
   mask: MaskSettings
   onChange: (mask: MaskSettings) => void
@@ -20,8 +21,7 @@ export default function MaskControls({
   disabled,
 }: Props) {
   return (
-    <div className="control-section mask-controls">
-      <h3>변환 영역</h3>
+    <SettingsGroup title="변환 영역">
       <label className="control">
         변환 대상
         <select
@@ -124,6 +124,6 @@ export default function MaskControls({
           </button>
         </>
       )}
-    </div>
+    </SettingsGroup>
   )
 }

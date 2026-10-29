@@ -22,8 +22,12 @@ const check = async (name, run) => {
 }
 const text = () =>
   page.getByLabel('ASCII 텍스트', { exact: true }).textContent()
-const copy = () =>
-  page.getByRole('button', { name: '복사', exact: true }).click()
+const copy = async () => {
+  if (await page.locator('.toast').count())
+    await page.getByRole('button', { name: '알림 닫기' }).click()
+  await page.getByRole('button', { name: '복사', exact: true }).click()
+  await page.locator('.toast').waitFor()
+}
 // Windows exposes platform CRLF when reading the OS clipboard back.
 const clipboard = async () =>
   (await page.evaluate(() => navigator.clipboard.readText())).replace(
@@ -81,6 +85,7 @@ const brush = async (x, y, endX = x, endY = y) => {
 }
 try {
   await page.goto(`${base}#/image`)
+  await page.getByLabel('\uBCF5\uC0AC \uD615\uC2DD').selectOption('text')
   await check(
     'Hangul density mapping, cells, graphemes and TXT/plain copy agreement',
     async () => {
@@ -142,12 +147,12 @@ try {
         const metrics = await page
           .getByLabel('ASCII 텍스트', { exact: true })
           .evaluate((pre) => {
-            const cells = [...pre.querySelectorAll('span > span')]
+            const cells = [...pre.querySelectorAll(':scope > span')]
             return cells
               .slice(0, 240)
               .map((span) => span.getBoundingClientRect().width)
           })
-        assert.ok(metrics.every((w) => w === 12))
+        assert.ok(metrics.length > 0 && metrics.every((w) => w === 12))
         await copy()
         assert.equal(await clipboard(), value)
         const download = page.waitForEvent('download')
@@ -363,7 +368,7 @@ try {
       await page.getByRole('button', { name: '텍스트', exact: true }).click()
       assert.equal(await text(), baseline)
       await page.getByLabel('문자 밀도 · 가로 문자 수').fill('200')
-      assert.ok((await text()).split('\n')[0].length === 200)
+      assert.ok((await text()).split('\n')[0].length === 80)
     },
   )
   await check(

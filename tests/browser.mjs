@@ -210,13 +210,13 @@ try {
         () => !document.querySelector('.play-button').disabled,
       )
       const first = await page
-        .locator('.video-stage>canvas')
+        .locator('.video-stage canvas')
         .evaluate((c) => c.toDataURL())
       await page.getByRole('button', { name: '영상 재생', exact: true }).click()
       await page.waitForTimeout(650)
       assert.notEqual(
         await page
-          .locator('.video-stage>canvas')
+          .locator('.video-stage canvas')
           .evaluate((c) => c.toDataURL()),
         first,
       )

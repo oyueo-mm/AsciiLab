@@ -21,9 +21,8 @@ import {
   exportHtml,
   exportPng,
   normalizeSettings,
-  asciiFont,
-  effectiveLineHeight,
   cellRatio,
+  effectiveLineHeight,
 } from '../utils/ascii'
 import type { AsciiSettings } from '../utils/ascii'
 import { canvasBlob, getArtwork, saveArtwork } from '../utils/storage'
@@ -36,6 +35,17 @@ import { segmentSubject } from '../utils/segmentation'
 import { copyFrame, isEditingText } from '../utils/clipboard'
 import type { CopyMode } from '../utils/clipboard'
 import type { AlphaMask } from '../utils/mask'
+import {
+  SettingsPanel,
+  SettingsPanelToggle,
+  useSettingsPanel,
+} from '../components/ascii/SettingsPanel'
+import PreviewViewport, {
+  PreviewZoomControls,
+  usePreviewZoom,
+} from '../components/ascii/PreviewViewport'
+import CopyOptions from '../components/ascii/CopyOptions'
+import FrameText from '../components/ascii/FrameText'
 
 type Source = {
   image: HTMLImageElement | HTMLCanvasElement
@@ -69,7 +79,10 @@ export default function ImageStudioPage() {
     null,
   )
   const autoAbort = useRef<AbortController | null>(null)
-  const [copyMode, setCopyMode] = useState<CopyMode>('text')
+  const [copyMode, setCopyMode] = useState<CopyMode>('image')
+  const [copyColumns, setCopyColumns] = useState(80)
+  const panel = useSettingsPanel()
+  const zoom = usePreviewZoom()
   const canvas = useRef<HTMLCanvasElement>(null),
     input = useRef<HTMLInputElement>(null),
     generation = useRef(0)
@@ -83,6 +96,32 @@ export default function ImageStudioPage() {
         maskApplied: true,
       }),
     [masked, source.width, source.height, settings],
+  )
+  const copySettings = useMemo(
+    () => ({ ...settings, columns: copyColumns }),
+    [settings, copyColumns],
+  )
+  const copyOutput = useMemo(
+    () =>
+      copyColumns === settings.columns
+        ? frame
+        : convertSource(
+            masked,
+            source.width,
+            source.height,
+            copySettings,
+            undefined,
+            { maskApplied: true },
+          ),
+    [
+      masked,
+      source.width,
+      source.height,
+      copySettings,
+      copyColumns,
+      settings.columns,
+      frame,
+    ],
   )
   const load = async (
     file: Blob,
@@ -104,6 +143,7 @@ export default function ImageStudioPage() {
       })
       setName(title)
       setView('ascii')
+      zoom.fit()
       setEditor(null)
       autoCache.current = savedSettings?.mask?.automatic
         ? {
@@ -198,7 +238,12 @@ export default function ImageStudioPage() {
   }
   async function copy() {
     try {
-      await copyFrame(copyMode, frame, settings, canvas.current)
+      await copyFrame(
+        copyMode,
+        copyMode === 'image' ? frame : copyOutput,
+        copyMode === 'image' ? settings : copySettings,
+        canvas.current,
+      )
       setMessage('복사했습니다.')
     } catch (error) {
       setView('text')
@@ -261,6 +306,7 @@ export default function ImageStudioPage() {
     <div className="studio-page">
       <div className="page-heading">
         <h1>이미지 변환</h1>
+        <SettingsPanelToggle {...panel} />
       </div>
       <div className="studio-toolbar">
         <div className="toolbar-group">
@@ -329,7 +375,9 @@ export default function ImageStudioPage() {
           {busy ? '저장 중…' : '갤러리에 저장'}
         </button>
       </div>
-      <div className="editor-layout">
+      <div
+        className={`editor-layout workspace-layout ${panel.open ? '' : 'settings-collapsed'}`}
+      >
         <div className="editor-main">
           <div className="preview-header">
             <label>
@@ -341,6 +389,7 @@ export default function ImageStudioPage() {
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
+            {view !== 'text' && <PreviewZoomControls zoom={zoom} />}
           </div>
           <div
             className={`preview-stage ${view === 'compare' ? 'compare-view' : ''} ${dragging ? 'is-dragging' : ''} ${settings.transparentBackground ? 'checkerboard' : ''}`}
@@ -355,49 +404,31 @@ export default function ImageStudioPage() {
               upload(e.dataTransfer.files[0])
             }}
           >
-            <div
-              className={`preview-piece ${view === 'ascii' || view === 'text' ? 'hidden-preview' : ''}`}
+            <PreviewViewport
+              className="preview-piece"
+              zoom={zoom}
+              width={source.width}
+              height={source.height}
+              active={view === 'original' || view === 'compare'}
+              reportFit={view === 'original'}
             >
               <img src={source.url} alt={`${name} 원본`} />
-            </div>
-            <div
-              className={`preview-piece ${view === 'original' || view === 'text' ? 'hidden-preview' : ''}`}
+            </PreviewViewport>
+            <PreviewViewport
+              className="preview-piece"
+              zoom={zoom}
+              width={Math.ceil(
+                frame.columns * settings.fontSize * cellRatio(settings),
+              )}
+              height={Math.ceil(
+                frame.rows * settings.fontSize * effectiveLineHeight(settings),
+              )}
+              active={view === 'ascii' || view === 'compare'}
             >
               <AsciiCanvas ref={canvas} frame={frame} settings={settings} />
-            </div>
+            </PreviewViewport>
             {view === 'text' && (
-              <div className="text-viewport">
-                <pre
-                  tabIndex={0}
-                  aria-label="ASCII 텍스트"
-                  title="붙여넣는 프로그램의 글꼴에 따라 문자 폭이 달라질 수 있습니다."
-                  style={{
-                    fontFamily: asciiFont(settings),
-                    fontSize: settings.fontSize,
-                    lineHeight: effectiveLineHeight(settings),
-                    background: settings.background,
-                  }}
-                >
-                  {frame.characters.map((char, i) => (
-                    <span key={i}>
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          width: settings.fontSize * cellRatio(settings),
-                          color: frame.colors[i],
-                          opacity: frame.opacities[i],
-                        }}
-                      >
-                        {char}
-                      </span>
-                      {(i + 1) % frame.columns === 0 &&
-                      i + 1 < frame.characters.length
-                        ? '\n'
-                        : ''}
-                    </span>
-                  ))}
-                </pre>
-              </div>
+              <FrameText frame={copyOutput} settings={copySettings} />
             )}
             {dragging && (
               <div className="drop-overlay">
@@ -426,16 +457,14 @@ export default function ImageStudioPage() {
                 투명 배경
               </label>
               <div className="export-buttons">
-                <select
-                  aria-label="복사 형식"
-                  value={copyMode}
-                  onChange={(e) => setCopyMode(e.target.value as CopyMode)}
-                >
-                  <option value="text">텍스트 복사</option>
-                  <option value="html">서식 포함 복사</option>
-                  <option value="image">이미지 복사</option>
-                </select>
-                <button onClick={copy}>복사</button>
+                <CopyOptions
+                  mode={copyMode}
+                  onMode={setCopyMode}
+                  columns={copyColumns}
+                  onColumns={setCopyColumns}
+                  showWidth={view === 'text' || copyMode !== 'image'}
+                  onCopy={copy}
+                />
                 <button
                   onClick={() =>
                     canvas.current && exportPng(canvas.current, filename)
@@ -446,7 +475,7 @@ export default function ImageStudioPage() {
                 <button
                   onClick={() =>
                     downloadBlob(
-                      new Blob([frame.text], {
+                      new Blob([copyOutput.text], {
                         type: 'text/plain;charset=utf-8',
                       }),
                       `${filename}.txt`,
@@ -455,15 +484,16 @@ export default function ImageStudioPage() {
                 >
                   TXT <Download size={13} />
                 </button>
-                <button onClick={() => exportHtml(frame, settings, filename)}>
+                <button
+                  onClick={() => exportHtml(copyOutput, copySettings, filename)}
+                >
                   HTML <Download size={13} />
                 </button>
               </div>
             </div>
           </div>
         </div>
-        <details className="mobile-settings" open>
-          <summary>변환 설정 열기 / 닫기</summary>
+        <SettingsPanel open={panel.open}>
           <Controls
             settings={settings}
             onChange={setSettings}
@@ -471,7 +501,7 @@ export default function ImageStudioPage() {
             onSelectRegion={() => setEditor('lasso')}
             onAutoSelect={autoSelect}
           />
-        </details>
+        </SettingsPanel>
       </div>
       {autoProgress && (
         <div className="ai-progress" role="status">

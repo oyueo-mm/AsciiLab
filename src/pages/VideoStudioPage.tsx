@@ -13,7 +13,7 @@ import {
 import Controls from '../components/ascii/Controls'
 import {
   convertSource,
-  DEFAULT_SETTINGS,
+  DEFAULT_VIDEO_SETTINGS,
   drawFrame,
   exportPng,
 } from '../utils/ascii'
@@ -21,6 +21,15 @@ import type { AsciiFrame, AsciiSettings } from '../utils/ascii'
 import { copyFrame } from '../utils/clipboard'
 import RegionEditor from '../components/ascii/RegionEditor'
 import { DEFAULT_MASK } from '../utils/mask'
+import {
+  SettingsPanel,
+  SettingsPanelToggle,
+  useSettingsPanel,
+} from '../components/ascii/SettingsPanel'
+import PreviewViewport, {
+  PreviewZoomControls,
+  usePreviewZoom,
+} from '../components/ascii/PreviewViewport'
 
 function timeLabel(seconds: number) {
   const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0
@@ -32,8 +41,7 @@ function timeLabel(seconds: number) {
 }
 export default function VideoStudioPage() {
   const [settings, setSettings] = useState<AsciiSettings>({
-      ...DEFAULT_SETTINGS,
-      columns: 100,
+      ...DEFAULT_VIDEO_SETTINGS,
     }),
     [url, setUrl] = useState(''),
     [name, setName] = useState('')
@@ -53,6 +61,10 @@ export default function VideoStudioPage() {
   const resumeAfterPick = useRef(false)
   const currentFrame = useRef<AsciiFrame | null>(null)
   const [copyFallback, setCopyFallback] = useState<string | null>(null)
+  const panel = useSettingsPanel()
+  const zoom = usePreviewZoom()
+  const [previewSize, setPreviewSize] = useState({ width: 504, height: 280 })
+  const lastSize = useRef(previewSize)
   const draw = useCallback(() => {
     const v = video.current,
       c = canvas.current
@@ -67,6 +79,13 @@ export default function VideoStudioPage() {
     )
     drawFrame(c, frame, settings)
     currentFrame.current = frame
+    if (
+      lastSize.current.width !== c.width ||
+      lastSize.current.height !== c.height
+    ) {
+      lastSize.current = { width: c.width, height: c.height }
+      setPreviewSize(lastSize.current)
+    }
   }, [settings])
   useEffect(() => {
     if (ready) draw()
@@ -102,6 +121,7 @@ export default function VideoStudioPage() {
     }
     video.current?.pause()
     setPlaying(false)
+    zoom.fit()
     setReady(false)
     currentFrame.current = null
     setCopyFallback(null)
@@ -152,6 +172,7 @@ export default function VideoStudioPage() {
     <div className="studio-page">
       <div className="page-heading">
         <h1>영상 변환</h1>
+        <SettingsPanelToggle {...panel} />
       </div>
       <div className="studio-toolbar">
         <button
@@ -195,7 +216,7 @@ export default function VideoStudioPage() {
             className="icon-button"
             aria-label="영상 설정 초기화"
             title="영상 설정 초기화"
-            onClick={() => setSettings({ ...DEFAULT_SETTINGS, columns: 100 })}
+            onClick={() => setSettings({ ...DEFAULT_VIDEO_SETTINGS })}
           >
             <RotateCcw size={16} />
           </button>
@@ -227,10 +248,13 @@ export default function VideoStudioPage() {
           </pre>
         </div>
       )}
-      <div className="editor-layout">
+      <div
+        className={`editor-layout workspace-layout ${panel.open ? '' : 'settings-collapsed'}`}
+      >
         <div className="editor-main">
           <div className="preview-header">
             <span>{name || '영상'}</span>
+            <PreviewZoomControls zoom={zoom} disabled={!ready} />
             <label className="transparency-option">
               <input
                 type="checkbox"
@@ -287,12 +311,19 @@ export default function VideoStudioPage() {
                 )
               }}
             />
-            <canvas
-              ref={canvas}
-              className={`ascii-canvas ${!ready ? 'hidden-preview' : ''}`}
-              aria-label="실시간 ASCII 영상 프리뷰"
-              role="img"
-            />
+            <PreviewViewport
+              zoom={zoom}
+              width={previewSize.width}
+              height={previewSize.height}
+              active={ready}
+            >
+              <canvas
+                ref={canvas}
+                className={`ascii-canvas ${!ready ? 'hidden-preview' : ''}`}
+                aria-label="실시간 ASCII 영상 프리뷰"
+                role="img"
+              />
+            </PreviewViewport>
             {!ready && (
               <button
                 className="video-empty"
@@ -353,8 +384,7 @@ export default function VideoStudioPage() {
             </button>
           </div>
         </div>
-        <details className="mobile-settings" open>
-          <summary>변환 설정 열기 / 닫기</summary>
+        <SettingsPanel open={panel.open}>
           <Controls
             settings={settings}
             onChange={setSettings}
@@ -362,7 +392,7 @@ export default function VideoStudioPage() {
             onPickColor={pickBackground}
             disabled={!ready}
           />
-        </details>
+        </SettingsPanel>
       </div>
       {picking && (
         <RegionEditor

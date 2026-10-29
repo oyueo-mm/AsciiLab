@@ -1,7 +1,8 @@
 import { SlidersHorizontal } from 'lucide-react'
-import { CHARSETS } from '../../utils/ascii'
+import { CHARSETS, DENSITY_PRESETS } from '../../utils/ascii'
 import type { AsciiSettings } from '../../utils/ascii'
 import MaskControls from './MaskControls'
+import { SettingsGroup } from './SettingsPanel'
 type Props = {
   settings: AsciiSettings
   onChange: (settings: AsciiSettings) => void
@@ -67,8 +68,31 @@ export default function Controls({
         onAuto={onAutoSelect}
         disabled={disabled}
       />
-      <div className="control-section">
-        <h3>해상도</h3>
+      <SettingsGroup title="해상도">
+        <label className="control">
+          밀도 프리셋
+          <select
+            aria-label="밀도 프리셋"
+            value={
+              DENSITY_PRESETS.some((preset) => preset.columns === s.columns)
+                ? s.columns
+                : 'custom'
+            }
+            onChange={(event) => {
+              if (event.target.value !== 'custom')
+                set('columns', +event.target.value)
+            }}
+          >
+            {DENSITY_PRESETS.map((preset) => (
+              <option value={preset.columns} key={preset.columns}>
+                {preset.label} · {preset.columns}열
+              </option>
+            ))}
+            <option value="custom" disabled>
+              사용자 지정
+            </option>
+          </select>
+        </label>
         {slider(
           'columns',
           '문자 밀도 · 가로 문자 수',
@@ -77,9 +101,8 @@ export default function Controls({
           2,
         )}
         {video && slider('fps', '프리뷰 FPS', 5, 30, 1, ' fps')}
-      </div>
-      <div className="control-section">
-        <h3>문자</h3>
+      </SettingsGroup>
+      <SettingsGroup title="문자">
         <label className="control">
           문자 세트
           <select
@@ -111,9 +134,8 @@ export default function Controls({
         )}
         {slider('fontSize', '글자 크기', 8, 24, 1, ' px')}
         {slider('lineHeight', '줄 간격 · 비율 보정', 0.8, 1.6, 0.05)}
-      </div>
-      <div className="control-section">
-        <h3>톤과 색상</h3>
+      </SettingsGroup>
+      <SettingsGroup title="톤과 색상">
         {slider('brightness', '밝기', -100, 100)}
         {slider('contrast', '대비', 0.2, 2.5, 0.05)}
         <label className="switch-row">
@@ -151,7 +173,7 @@ export default function Controls({
             />
           </span>
         </label>
-      </div>
+      </SettingsGroup>
     </aside>
   )
 }

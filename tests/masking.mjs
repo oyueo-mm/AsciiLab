@@ -382,7 +382,7 @@ try {
       await page.waitForTimeout(250)
       await page.evaluate(() => {
         window.scrollTo(0, 0)
-        document.querySelector('.mobile-settings').scrollTop = 0
+        document.querySelector('.settings-rail').scrollTop = 0
       })
       await page.screenshot({
         path: '.qa/v02/image-desktop.png',
@@ -678,7 +678,7 @@ try {
       await page.getByLabel('투명 배경', { exact: true }).check()
       await page.getByLabel('문자 세트', { exact: true }).selectOption('Custom')
       await page.getByLabel('사용자 문자').fill('@')
-      const c = page.locator('.video-stage>canvas')
+      const c = page.locator('.video-stage canvas')
       assert.ok((await stats(c)).left > 0)
       await page.getByLabel('변환 대상', { exact: true }).selectOption('color')
       await page

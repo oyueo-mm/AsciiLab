@@ -25,7 +25,7 @@ export type AsciiSettings = {
   transparentBackground: boolean
 }
 export const DEFAULT_SETTINGS: AsciiSettings = {
-  columns: 120,
+  columns: 80,
   charset: 'Classic',
   custom: '@#*:. ',
   brightness: 0,
@@ -39,6 +39,16 @@ export const DEFAULT_SETTINGS: AsciiSettings = {
   mask: { ...DEFAULT_MASK },
   transparentBackground: false,
 }
+export const DEFAULT_VIDEO_SETTINGS: AsciiSettings = {
+  ...DEFAULT_SETTINGS,
+  columns: 70,
+}
+export const DENSITY_PRESETS = [
+  { label: '단순', columns: 50 },
+  { label: '보통', columns: 80 },
+  { label: '정밀', columns: 120 },
+  { label: '초정밀', columns: 180 },
+] as const
 export function normalizeSettings(
   value?: Omit<Partial<AsciiSettings>, 'mask'> & {
     mask?: Partial<MaskSettings>
@@ -218,7 +228,11 @@ export function escapeHtml(text: string) {
       ]!,
   )
 }
-export function frameHtml(frame: AsciiFrame, settings: AsciiSettings) {
+export function frameHtml(
+  frame: AsciiFrame,
+  settings: AsciiSettings,
+  label?: string,
+) {
   const cell = settings.fontSize * cellRatio(settings)
   const content = frame.characters
     .map(
@@ -229,7 +243,7 @@ export function frameHtml(frame: AsciiFrame, settings: AsciiSettings) {
   const background = /^#[0-9a-f]{6}$/i.test(settings.background)
     ? settings.background
     : '#050505'
-  return `<pre style="margin:0;white-space:pre;letter-spacing:0;font:${settings.fontSize}px/${effectiveLineHeight(settings)} ${asciiFont(settings)};background:${settings.transparentBackground ? 'transparent' : background}">${content}</pre>`
+  return `<pre${label ? ` tabindex="0" aria-label="${escapeHtml(label)}"` : ''} style="margin:0;white-space:pre;overflow-wrap:normal;word-break:normal;letter-spacing:0;font-family:${asciiFont(settings)};font-size:${settings.fontSize}px;line-height:${settings.fontSize * effectiveLineHeight(settings)}px;font-variant-ligatures:none;font-kerning:none;text-size-adjust:none;background:${settings.transparentBackground ? 'transparent' : background}">${content}</pre>`
 }
 export function exportHtml(
   frame: AsciiFrame,
