@@ -1,67 +1,85 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { convertSource, DEFAULT_SETTINGS, drawFrame } from '../../utils/ascii'
+import {
+  advanceHeroAngle,
+  heroFrameInterval,
+  torusGeometry,
+} from '../../utils/heroAnimation'
 
 export default function AsciiHeroAnimation() {
-  const canvas = useRef<HTMLCanvasElement>(null)
-  const angleRef = useRef(0.48)
+  const canvas = useRef<HTMLCanvasElement>(null),
+    angleRef = useRef(0.48)
   const [paused, setPaused] = useState(
     () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   )
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const change = () => {
+      if (media.matches) setPaused(true)
+    }
+    media.addEventListener('change', change)
+    return () => media.removeEventListener('change', change)
+  }, [])
   useEffect(() => {
     const source = document.createElement('canvas'),
       sampler = document.createElement('canvas')
     source.width = 220
     source.height = 112
     const ctx = source.getContext('2d')!,
-      settings = {
-        ...DEFAULT_SETTINGS,
-        columns: 180,
-        fontSize: 9,
-        lineHeight: 1.08,
-      }
+      geometry = torusGeometry()
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      columns: 180,
+      fontSize: 9,
+      lineHeight: 1.08,
+    }
+    const depths = new Float32Array(220 * 112),
+      pixels = ctx.createImageData(220, 112)
     let id = 0,
-      last = -100,
-      rendered = false
+      lastPaint: number | null = null,
+      cost = 0
     const render = (time: number) => {
-      if (time - last > 66 && (!paused || !rendered)) {
-        last = time
-        rendered = true
-        if (!paused && !document.hidden) angleRef.current += 0.009
-        const angle = angleRef.current
-        const depths = new Float32Array(220 * 112).fill(-100)
-        const pixels = ctx.createImageData(220, 112)
-        const a = 0.64 + Math.sin(angle * 0.7) * 0.18,
-          b = angle * 0.42
-        for (let theta = 0; theta < Math.PI * 2; theta += 0.025)
-          for (let phi = 0; phi < Math.PI * 2; phi += 0.035) {
-            const ct = Math.cos(theta),
-              st = Math.sin(theta),
-              cp = Math.cos(phi),
-              sp = Math.sin(phi)
-            const ring = 1.85 + 0.76 * ct,
-              x = ring * cp,
-              y = ring * sp,
-              z = 0.76 * st
-            const ry = y * Math.cos(a) - z * Math.sin(a),
-              rz = y * Math.sin(a) + z * Math.cos(a)
-            const rx = x * Math.cos(b) - ry * Math.sin(b),
-              yy = x * Math.sin(b) + ry * Math.cos(b)
-            const px = Math.round(110 + rx * 34),
-              py = Math.round(56 + yy * 18)
-            if (px < 0 || px >= 220 || py < 0 || py >= 112) continue
-            const index = py * 220 + px
-            if (rz < depths[index]) continue
-            depths[index] = rz
-            const ny = ct * sp * Math.cos(a) - st * Math.sin(a),
-              nz = ct * sp * Math.sin(a) + st * Math.cos(a)
-            const light = Math.max(
-              0,
-              0.25 + nz * 0.55 - ny * 0.38 - ct * cp * 0.24,
-            )
-            const color = Math.round(35 + light * 220)
-            pixels.data.set([color, color, color, 255], index * 4)
-          }
+      if (document.hidden) return
+      if (
+        lastPaint === null ||
+        time - lastPaint >= heroFrameInterval(cost) - 0.5
+      ) {
+        const start = performance.now()
+        if (!paused && lastPaint !== null)
+          angleRef.current = advanceHeroAngle(
+            angleRef.current,
+            (time - lastPaint) / 1000,
+          )
+        lastPaint = time
+        const a = 0.64 + Math.sin(angleRef.current * 0.7) * 0.18,
+          b = angleRef.current * 0.42
+        const ca = Math.cos(a),
+          sa = Math.sin(a),
+          cb = Math.cos(b),
+          sb = Math.sin(b)
+        depths.fill(-100)
+        pixels.data.fill(0)
+        for (let i = 0; i < geometry.length; i += 6) {
+          const x = geometry[i],
+            y = geometry[i + 1],
+            z = geometry[i + 2]
+          const ry = y * ca - z * sa,
+            rz = y * sa + z * ca
+          const px = Math.round(110 + (x * cb - ry * sb) * 34),
+            py = Math.round(56 + (x * sb + ry * cb) * 18)
+          if (px < 0 || px >= 220 || py < 0 || py >= 112) continue
+          const index = py * 220 + px
+          if (rz < depths[index]) continue
+          depths[index] = rz
+          const nx = geometry[i + 3],
+            ny = geometry[i + 4] * ca - geometry[i + 5] * sa,
+            nz = geometry[i + 4] * sa + geometry[i + 5] * ca
+          const color = Math.round(
+            35 + Math.max(0, 0.25 + nz * 0.55 - ny * 0.38 - nx * 0.24) * 220,
+          )
+          pixels.data.set([color, color, color, 255], index * 4)
+        }
         ctx.putImageData(pixels, 0, 0)
         if (canvas.current)
           drawFrame(
@@ -69,38 +87,34 @@ export default function AsciiHeroAnimation() {
             convertSource(source, 220, 112, settings, sampler),
             settings,
           )
+        cost = cost * 0.8 + (performance.now() - start) * 0.2
       }
-      id = requestAnimationFrame(render)
+      if (!paused) id = requestAnimationFrame(render)
     }
-    id = requestAnimationFrame(render)
-    return () => cancelAnimationFrame(id)
+    const visibility = () => {
+      cancelAnimationFrame(id)
+      lastPaint = null
+      if (!document.hidden) id = requestAnimationFrame(render)
+    }
+    visibility()
+    document.addEventListener('visibilitychange', visibility)
+    return () => {
+      cancelAnimationFrame(id)
+      document.removeEventListener('visibilitychange', visibility)
+    }
   }, [paused])
+  const label = paused ? '애니메이션 재생' : '애니메이션 일시정지'
   return (
     <div className="hero-art">
-      <div className="art-topline">
-        <span>
-          <i className="status-dot" /> LIVE ASCII RENDER
-        </span>
-        <span>EXPERIMENT 001 — TORUS</span>
-      </div>
-      <canvas
-        ref={canvas}
-        aria-label="실제 ASCII 문자로 실시간 렌더링되는 회전 도넛 조형물"
-        role="img"
-      />
-      <div className="art-bottomline">
-        <span>
-          180 COLUMNS <b>×</b> REAL-TIME <b>×</b> CANVAS
-        </span>
-        <button
-          className="icon-button"
-          aria-label={paused ? '애니메이션 재생' : '애니메이션 일시정지'}
-          onClick={() => setPaused(!paused)}
-        >
-          {paused ? <Play size={14} /> : <Pause size={14} />}
-        </button>
-        <span>FORM, REIMAGINED IN CHARACTERS.</span>
-      </div>
+      <canvas ref={canvas} aria-label="회전하는 ASCII 도넛" role="img" />
+      <button
+        className="icon-button hero-play"
+        title={label}
+        aria-label={label}
+        onClick={() => setPaused(!paused)}
+      >
+        {paused ? <Play size={16} /> : <Pause size={16} />}
+      </button>
     </div>
   )
 }

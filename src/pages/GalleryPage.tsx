@@ -31,16 +31,12 @@ function GalleryCard({
           <Link to={`/image?id=${art.id}`}>
             <h2>{art.name}</h2>
           </Link>
-          <p>
-            {new Date(art.created).toLocaleDateString('ko-KR')}
-            <span>·</span>
-            {art.settings.columns} COL<span>·</span>
-            {art.settings.charset}
-          </p>
+          <p>{new Date(art.created).toLocaleDateString('ko-KR')}</p>
         </div>
         <button
           className="icon-button delete-button"
           aria-label={`${art.name} 삭제`}
+          title="작품 삭제"
           onClick={() => setConfirm(!confirm)}
         >
           <Trash2 size={15} />
@@ -97,13 +93,7 @@ export default function GalleryPage() {
   return (
     <div className="gallery-page">
       <div className="page-heading">
-        <div>
-          <span className="eyebrow">YOUR LOCAL COLLECTION</span>
-          <h1>
-            Gallery<span>.</span>
-          </h1>
-          <p>문자로 남긴 순간들. 당신의 실험을 이어가세요.</p>
-        </div>
+        <h1>갤러리</h1>
         <Link to="/image" className="button primary small">
           <Plus size={16} /> 새 작품 만들기
         </Link>
@@ -112,9 +102,6 @@ export default function GalleryPage() {
         <span>
           <Grid2X2 size={15} /> 저장된 작품{' '}
           <b>{artworks.length.toString().padStart(2, '0')}</b>
-        </span>
-        <span>
-          <i className="status-dot" /> THIS BROWSER ONLY
         </span>
       </div>
       {error && (
@@ -132,24 +119,15 @@ export default function GalleryPage() {
         </div>
       ) : (
         <div className="empty-state">
-          <div
-            className="empty-ascii"
-            aria-hidden="true"
-          >{`+ - - - - - - - +\n|               |\n|    @ # + :    |\n|    : + # @    |\n|               |\n+ - - - - - - - +`}</div>
-          <h2>첫 번째 실험을 기다리고 있어요.</h2>
-          <p>
-            Image Studio에서 작품을 만들고 ‘갤러리에 저장’을 눌러보세요.
-            <br />
-            원본과 설정을 함께 보관해 언제든 다시 편집할 수 있습니다.
-          </p>
+          <h2>저장된 작품이 없습니다.</h2>
           <Link className="button primary" to="/image">
             이미지로 시작하기 <ArrowRight size={16} />
           </Link>
         </div>
       )}
       <p className="gallery-storage-note">
-        작품은 이 기기의 브라우저 저장소에 보관됩니다. 브라우저 데이터를 지우면
-        삭제되므로, 소중한 작품은 파일로도 내보내 주세요.
+        브라우저 데이터를 지우면 작품도 삭제됩니다. 중요한 작품은 파일로
+        내보내세요.
       </p>
     </div>
   )
